@@ -1,0 +1,182 @@
+[
+  {
+    "id": "r01",
+    "language": "en",
+    "text": "There has been no water in Soshanguve Block F since Monday morning. The clinic around the corner also has no water and is turning patients away.",
+    "expected_category": "water",
+    "expected_urgency": "high",
+    "expected_municipality": "Tshwane",
+    "expected_department": "Water and Sanitation"
+  },
+  {
+    "id": "r02",
+    "language": "zu",
+    "text": "Amanzi ayaphuma emgwaqeni e-Umlazi V Section, kuvuza ipayipi elikhulu kusukela izolo.",
+    "expected_category": "water",
+    "expected_urgency": "medium",
+    "expected_municipality": "eThekwini",
+    "expected_department": "Water and Sanitation"
+  },
+  {
+    "id": "r03",
+    "language": "xh",
+    "text": "Amanzi angcolileyo avuza ezitratweni eKhayelitsha eSite C, kwaye abantwana bayagula.",
+    "expected_category": "sanitation",
+    "expected_urgency": "critical",
+    "expected_municipality": "Cape Town",
+    "expected_department": "Water and Sanitation"
+  },
+  {
+    "id": "r04",
+    "language": "af",
+    "text": "Die straatlig by die kruising van Voortrekkerstraat en Kerkstraat in Paarl is al drie weke stukkend. Dit is baie donker en gevaarlik snags.",
+    "expected_category": "electricity",
+    "expected_urgency": "high",
+    "expected_municipality": "Drakenstein",
+    "expected_department": "Electricity"
+  },
+  {
+    "id": "r05",
+    "language": "en",
+    "text": "After last night's storm there are live wires hanging low over the road near Tembisa Hospital. Children walk under them to get to school.",
+    "expected_category": "electricity",
+    "expected_urgency": "critical",
+    "expected_municipality": "Ekurhuleni",
+    "expected_department": "Electricity"
+  },
+  {
+    "id": "r06",
+    "language": "st",
+    "text": "Matlakala a ntse a bokellana seterateng sa rona Mangaung, ha a so nkuwe libeke tse pedi.",
+    "expected_category": "waste",
+    "expected_urgency": "medium",
+    "expected_municipality": "Mangaung",
+    "expected_department": "Waste Management"
+  },
+  {
+    "id": "r07",
+    "language": "en",
+    "text": "A large pothole on Main Road in Woodstock, Cape Town, damaged my tyre. It has been there for months.",
+    "expected_category": "roads",
+    "expected_urgency": "low",
+    "expected_municipality": "Cape Town",
+    "expected_department": "Roads and Transport"
+  },
+  {
+    "id": "r08",
+    "language": "zu",
+    "text": "Ugesi usuhambile izinsuku ezintathu e-Orlando East, eSoweto. Sinesiguli esidinga umshini wokuphefumula.",
+    "expected_category": "electricity",
+    "expected_urgency": "critical",
+    "expected_municipality": "Johannesburg",
+    "expected_department": "Electricity"
+  },
+  {
+    "id": "r09",
+    "language": "af",
+    "text": "Die openbare toilette by die busstasie in Mitchells Plain is gesluit en vuil. Daar is geen ander toilette naby nie.",
+    "expected_category": "sanitation",
+    "expected_urgency": "medium",
+    "expected_municipality": "Cape Town",
+    "expected_department": "Water and Sanitation"
+  },
+  {
+    "id": "r10",
+    "language": "xh",
+    "text": "Kukho umngxuma omkhulu endleleni eGqeberha, kufutshane nesikolo. zimoto zihlala zonakala.",
+    "expected_category": "roads",
+    "expected_urgency": "medium",
+    "expected_municipality": "Nelson Mandela Bay",
+    "expected_department": "Roads and Transport"
+  },
+  {
+    "id": "r11",
+    "language": "en",
+    "text": "The power has gone off every evening between 6 and 9 in Mitchells Plain for the past week. Food is spoiling in our fridges.",
+    "expected_category": "electricity",
+    "expected_urgency": "medium",
+    "expected_municipality": "Cape Town",
+    "expected_department": "Electricity"
+  },
+  {
+    "id": "r12",
+    "language": "en",
+    "text": "Our bins in Paarl were not collected this week. Please send the truck.",
+    "expected_category": "waste",
+    "expected_urgency": "low",
+    "expected_municipality": "Drakenstein",
+    "expected_department": "Waste Management"
+  },
+  {
+    "id": "r13",
+    "language": "en",
+    "text": "Raw sewage is flowing into the stream where children play in Khayelitsha Site B. The smell is terrible and some children have stomach problems.",
+    "expected_category": "sanitation",
+    "expected_urgency": "critical",
+    "expected_municipality": "Cape Town",
+    "expected_department": "Water and Sanitation"
+  },
+  {
+    "id": "r14",
+    "language": "zu",
+    "text": "Amarobhothi awasebenzi emgwaqeni omkhulu e-Orlando East kusukela ngoMsombuluko, kuyingozi kakhulu ebusuku.",
+    "expected_category": "roads",
+    "expected_urgency": "high",
+    "expected_municipality": "Johannesburg",
+    "expected_department": "Roads and Transport"
+  },
+  {
+    "id": "r15",
+    "language": "zu",
+    "text": "Asinamanzi e-Umlazi izinsuku ezine manje, nekliniki ayinawo amanzi.",
+    "expected_category": "water",
+    "expected_urgency": "high",
+    "expected_municipality": "eThekwini",
+    "expected_department": "Water and Sanitation"
+  },
+  {
+    "id": "r16",
+    "language": "xh",
+    "text": "Akukho mbane eKhayelitsha kwiintsuku ezintathu ngoku, kwaye ukutya kuyonakala efrijini.",
+    "expected_category": "electricity",
+    "expected_urgency": "high",
+    "expected_municipality": "Cape Town",
+    "expected_department": "Electricity"
+  },
+  {
+    "id": "r17",
+    "language": "af",
+    "text": "'n Waterpyp lek al 'n week lank in ons straat in Woodstock en die water loop die straat af.",
+    "expected_category": "water",
+    "expected_urgency": "medium",
+    "expected_municipality": "Cape Town",
+    "expected_department": "Water and Sanitation"
+  },
+  {
+    "id": "r18",
+    "language": "st",
+    "text": "Ha ho na motlakase Mangaung matsatsing a mararo, 'me ntate oa ka o hloka mochini oa oksijene ho hema.",
+    "expected_category": "electricity",
+    "expected_urgency": "critical",
+    "expected_municipality": "Mangaung",
+    "expected_department": "Electricity"
+  },
+  {
+    "id": "r19",
+    "language": "en",
+    "text": "Please tell me where I can renew my vehicle licence disc in Soweto.",
+    "expected_category": "other",
+    "expected_urgency": "low",
+    "expected_municipality": "Johannesburg",
+    "expected_department": "General Enquiries"
+  },
+  {
+    "id": "r20",
+    "language": "en",
+    "text": "There has been no water in our street in Polokwane since yesterday.",
+    "expected_category": "water",
+    "expected_urgency": "medium",
+    "expected_municipality": "unknown",
+    "expected_department": null
+  }
+]

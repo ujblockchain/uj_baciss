@@ -1,0 +1,72 @@
+[
+  {
+    "id": "r01",
+    "language": "en",
+    "text": "There has been no water in Soshanguve Block F since Monday morning. The clinic around the corner also has no water and is turning patients away.",
+    "expected_category": "water",
+    "expected_urgency": "high"
+  },
+  {
+    "id": "r02",
+    "language": "zu",
+    "text": "Amanzi ayaphuma emgwaqeni e-Umlazi V Section, kuvuza ipayipi elikhulu kusukela izolo.",
+    "expected_category": "water",
+    "expected_urgency": "medium"
+  },
+  {
+    "id": "r03",
+    "language": "xh",
+    "text": "Amanzi angcolileyo avuza ezitratweni eKhayelitsha eSite C, kwaye abantwana bayagula.",
+    "expected_category": "sanitation",
+    "expected_urgency": "critical"
+  },
+  {
+    "id": "r04",
+    "language": "af",
+    "text": "Die straatlig by die kruising van Voortrekkerstraat en Kerkstraat in Paarl is al drie weke stukkend. Dit is baie donker snags en daar was al twee ongelukke.",
+    "expected_category": "electricity",
+    "expected_urgency": "high"
+  },
+  {
+    "id": "r05",
+    "language": "en",
+    "text": "After last night's storm there are live wires hanging low over the road near Tembisa Hospital. Children walk under them to get to school.",
+    "expected_category": "electricity",
+    "expected_urgency": "critical"
+  },
+  {
+    "id": "r06",
+    "language": "st",
+    "text": "Matlakala a ntse a bokellana seterateng sa rona Mangaung, ha a so nkuwe libeke tse pedi.",
+    "expected_category": "waste",
+    "expected_urgency": "medium"
+  },
+  {
+    "id": "r07",
+    "language": "en",
+    "text": "A large pothole on Main Road in Woodstock, Cape Town, damaged my tyre. It has been there for months.",
+    "expected_category": "roads",
+    "expected_urgency": "low"
+  },
+  {
+    "id": "r08",
+    "language": "zu",
+    "text": "Ugesi usuhambile izinsuku ezintathu e-Orlando East, eSoweto. Sinesiguli esidinga umshini wokuphefumula.",
+    "expected_category": "electricity",
+    "expected_urgency": "critical"
+  },
+  {
+    "id": "r09",
+    "language": "af",
+    "text": "Die openbare toilette by die busstasie in Mitchells Plain is gesluit en vuil. Daar is geen water nie.",
+    "expected_category": "sanitation",
+    "expected_urgency": "medium"
+  },
+  {
+    "id": "r10",
+    "language": "xh",
+    "text": "Kukho umngxuma omkhulu endleleni eGqeberha, kufutshane nesikolo. zimoto zihlala zonakala.",
+    "expected_category": "roads",
+    "expected_urgency": "medium"
+  }
+]

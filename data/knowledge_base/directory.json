@@ -1,0 +1,33 @@
+{
+  "areas": {
+    "Soshanguve": "Tshwane",
+    "Umlazi": "eThekwini",
+    "Khayelitsha": "Cape Town",
+    "Woodstock": "Cape Town",
+    "Mitchells Plain": "Cape Town",
+    "Paarl": "Drakenstein",
+    "Tembisa": "Ekurhuleni",
+    "Soweto": "Johannesburg",
+    "Orlando East": "Johannesburg",
+    "Mangaung": "Mangaung",
+    "Gqeberha": "Nelson Mandela Bay"
+  },
+  "municipalities": {
+    "Tshwane": { "phone": "000 000 0001" },
+    "eThekwini": { "phone": "000 000 0002" },
+    "Cape Town": { "phone": "000 000 0003" },
+    "Drakenstein": { "phone": "000 000 0004" },
+    "Ekurhuleni": { "phone": "000 000 0005" },
+    "Johannesburg": { "phone": "000 000 0006" },
+    "Mangaung": { "phone": "000 000 0007" },
+    "Nelson Mandela Bay": { "phone": "000 000 0008" }
+  },
+  "departments": {
+    "water": "Water and Sanitation",
+    "sanitation": "Water and Sanitation",
+    "electricity": "Electricity",
+    "roads": "Roads and Transport",
+    "waste": "Waste Management",
+    "other": "General Enquiries"
+  }
+}

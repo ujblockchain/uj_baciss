@@ -1,0 +1,2160 @@
+=== 01_triage_structured_output.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 1: Structured output with the Triage Agent\n",
+    "\n",
+    "**Concept.** A language model normally answers in free text. Our software needs reliable fields such as `category` and `urgency`. So we describe the answer we want as a Pydantic model (a *contract*), ask the model to follow it, and Pydantic checks the result. If the model breaks the contract we get an error, not silent bad data.\n",
+    "\n",
+    "**Agent.** This is our first agent, the Triage Agent. It has no tools: it reads one citizen report and decides the language, an English translation, the category, a summary and the urgency.\n",
+    "\n",
+    "Run each cell in order with the Run button. Your output may differ slightly from the example in the notes, because language models are not deterministic."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Load the code and settings\n",
+    "\n",
+    "The real logic lives in `src/community_voice/`. This notebook only imports it. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "from pathlib import Path\n",
+    "\n",
+    "import community_voice\n",
+    "from community_voice.agents.triage import triage\n",
+    "from community_voice.core.config import get_settings\n",
+    "from community_voice.schemas.report import ReportIn, SampleReport\n",
+    "from community_voice.schemas.triage import TriageResult\n",
+    "\n",
+    "ROOT = Path(community_voice.__file__).resolve().parents[2]\n",
+    "settings = get_settings()\n",
+    "print(\"Gemini model:\", settings.gemini_model)\n",
+    "print(\"Groq model:  \", settings.groq_model)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. The contract\n",
+    "\n",
+    "These are the fields the model must fill in. The descriptions are sent to the model, so they act as instructions."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for name, field in TriageResult.model_fields.items():\n",
+    "    print(f\"{name:16} {field.description}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Triage one report\n",
+    "\n",
+    "An isiZulu report about a leaking water pipe in Umlazi. We never tell the model the language."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "report = ReportIn(\n",
+    "    text=\"Amanzi ayaphuma emgwaqeni e-Umlazi V Section, \"\n",
+    "    \"kuvuza ipayipi elikhulu kusukela izolo.\"\n",
+    ")\n",
+    "result = triage(report)\n",
+    "print(result.model_dump_json(indent=2))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "`result` is a real `TriageResult` object, not text. Try `result.category` and `result.urgency` in a new cell."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Triage all 10 sample reports\n",
+    "\n",
+    "These fictional reports are in English, isiZulu, isiXhosa, Afrikaans and Sesotho. Each has the answer we expect, so we can check the agent."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "path = ROOT / \"data\" / \"sample_reports\" / \"reports.json\"\n",
+    "samples = [\n",
+    "    SampleReport.model_validate(item)\n",
+    "    for item in json.loads(path.read_text(encoding=\"utf-8\"))\n",
+    "]\n",
+    "print(len(samples), \"sample reports loaded\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "results = []\n",
+    "for sample in samples:\n",
+    "    result = triage(ReportIn(text=sample.text))\n",
+    "    results.append(result)\n",
+    "    cat_ok = result.category == sample.expected_category\n",
+    "    urg_ok = result.urgency == sample.expected_urgency\n",
+    "    print(\n",
+    "        f\"{sample.id}  {result.language.value:5} {result.category.value:12}\"\n",
+    "        f\" {result.urgency.value:9} category ok: {cat_ok!s:5}\"\n",
+    "        f\" urgency ok: {urg_ok!s:5}\"\n",
+    "    )"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "pairs = list(zip(samples, results, strict=True))\n",
+    "category_hits = sum(r.category == s.expected_category for s, r in pairs)\n",
+    "urgency_hits = sum(r.urgency == s.expected_urgency for s, r in pairs)\n",
+    "print(f\"Category matches our label: {category_hits}/{len(samples)}\")\n",
+    "print(f\"Urgency matches our label:  {urgency_hits}/{len(samples)}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "A mismatch is not always the model's fault: urgency is a judgement call. Read the model's reasoning for each report and decide whether you agree."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for sample, result in pairs:\n",
+    "    print(sample.id, \"|\", result.summary)\n",
+    "    print(\"     urgency:\", result.urgency.value, \"-\", result.urgency_reason)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. Swap the model provider\n",
+    "\n",
+    "Our provider layer lets an agent use a different model by changing one word. Here we run the same report on Groq. Some models do not support structured output, so if this fails the error is shown instead of stopping the notebook."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "try:\n",
+    "    groq_result = triage(ReportIn(text=samples[1].text), provider=\"groq\")\n",
+    "    print(groq_result.model_dump_json(indent=2))\n",
+    "except Exception as error:\n",
+    "    print(\"Groq structured output failed:\", type(error).__name__, error)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- The model returned typed fields we can rely on, in any of five languages.\n",
+    "- The answers are checked against the contract: an unknown category would raise an error.\n",
+    "- Changing the urgency guide in `src/community_voice/agents/triage.py` changes the model's behaviour. "
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+
+=== 02_react_routing.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 2: Tools and ReAct (Routing Agent)\n",
+    "\n",
+    "An agent can call tools. In a ReAct loop it reasons, acts (calls a tool), reads the result, and repeats until it can answer.\n",
+    "\n",
+    "Our Routing Agent has two tools and must chain them: area to municipality, then municipality to department."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "from pathlib import Path\n",
+    "\n",
+    "import community_voice\n",
+    "from community_voice.agents.routing import run_routing_agent\n",
+    "from community_voice.agents.triage import triage\n",
+    "from community_voice.schemas.report import ReportIn, SampleReport\n",
+    "from community_voice.schemas.triage import TriageResult\n",
+    "from community_voice.tools.directory import find_municipality, lookup_department\n",
+    "\n",
+    "ROOT = Path(community_voice.__file__).resolve().parents[2]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. The tools\n",
+    "\n",
+    "Plain Python functions with `@tool`. The docstring tells the agent when to use each one. "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(find_municipality.invoke({\"area\": \"Umlazi\"}))\n",
+    "print(lookup_department.invoke({\"municipality\": \"eThekwini\", \"category\": \"water\"}))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Route one report\n",
+    "\n",
+    "Triage first, then route. `show_trace` prints each tool call (ACT) and what came back (RESULT)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def show_trace(state):\n",
+    "    for message in state[\"messages\"]:\n",
+    "        if message.type == \"ai\" and message.tool_calls:\n",
+    "            for call in message.tool_calls:\n",
+    "                if call[\"name\"] != \"RoutingResult\":\n",
+    "                    print(\"ACT   \", call[\"name\"], call[\"args\"])\n",
+    "        elif message.type == \"tool\" and message.name != \"RoutingResult\":\n",
+    "            print(\"RESULT\", message.content)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "report = ReportIn(\n",
+    "    text=\"Amanzi ayaphuma emgwaqeni e-Umlazi V Section, \"\n",
+    "    \"kuvuza ipayipi elikhulu kusukela izolo.\"\n",
+    ")\n",
+    "triaged = triage(report)\n",
+    "state = run_routing_agent(triaged)\n",
+    "show_trace(state)\n",
+    "print(state[\"structured_response\"].model_dump_json(indent=2))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Route all 10 sample reports"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "path = ROOT / \"data\" / \"sample_reports\" / \"reports.json\"\n",
+    "samples = [\n",
+    "    SampleReport.model_validate(item)\n",
+    "    for item in json.loads(path.read_text(encoding=\"utf-8\"))\n",
+    "]\n",
+    "for sample in samples:\n",
+    "    triaged = triage(ReportIn(text=sample.text))\n",
+    "    routing = run_routing_agent(triaged)[\"structured_response\"]\n",
+    "    print(\n",
+    "        f\"{sample.id}  {triaged.category.value:11}\"\n",
+    "        f\" {str(triaged.area_mentioned):17} {routing.municipality:19}\"\n",
+    "        f\" {routing.department:22} human: {routing.needs_human}\"\n",
+    "    )"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. An area that is not in the directory\n",
+    "\n",
+    "The agent must not guess. It should answer `unknown` and ask for a human."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "unknown = TriageResult(\n",
+    "    language=\"en\",\n",
+    "    english_text=\"No water since Monday.\",\n",
+    "    category=\"water\",\n",
+    "    summary=\"Water outage.\",\n",
+    "    urgency=\"high\",\n",
+    "    urgency_reason=\"Outage for days.\",\n",
+    "    area_mentioned=\"Thornville Heights\",\n",
+    ")\n",
+    "state = run_routing_agent(unknown)\n",
+    "show_trace(state)\n",
+    "print(state[\"structured_response\"].model_dump_json(indent=2))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- The agent chose which tool to call, and in what order.\n",
+    "- It used the first tool's result as input to the second.\n",
+    "- With no match, it asked for a human instead of guessing.\n",
+    "- To use Gemini instead of Groq, pass `provider='gemini'` to `run_routing_agent`."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+
+=== 03_rag_policy_search.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 3: RAG (retrieval-augmented generation)\n",
+    "\n",
+    "A model only knows what it was trained on, so it guesses about documents it has never seen. RAG stores our documents as searchable chunks, retrieves the closest ones to a question, and gives them to the model.\n",
+    "\n",
+    "Search works by meaning (embeddings), not keywords. \n",
+    "\n",
+    "Note: _The policy documents are fictional sample content._"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain.agents import create_agent\n",
+    "\n",
+    "from community_voice.llm.providers import get_chat_model\n",
+    "from community_voice.rag.store import build_index, search\n",
+    "from community_voice.tools.policy import search_policy"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Build the index\n",
+    "\n",
+    "Each `##` section becomes a chunk. Chroma embeds every chunk on your machine. The first run downloads the embedding model, so it can take a while."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(build_index(), \"chunks indexed\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Search by meaning\n",
+    "\n",
+    "The queries share few words with the documents. A smaller distance means a closer match."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "queries = [\n",
+    "    \"No lights on our street at night\",\n",
+    "    \"How long until a burst pipe is fixed?\",\n",
+    "    \"My rubbish was not collected\",\n",
+    "]\n",
+    "for query in queries:\n",
+    "    print(query)\n",
+    "    for hit in search(query, n_results=2):\n",
+    "        title = hit[\"text\"].splitlines()[0]\n",
+    "        print(f\"  {hit['distance']:.2f}  {title}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Ask without retrieval\n",
+    "\n",
+    "The model has never seen our charters, so it guesses."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "question = (\n",
+    "    \"Under our service charter, within how many working days must a faulty \"\n",
+    "    \"streetlight at a dangerous intersection be repaired?\"\n",
+    ")\n",
+    "print(get_chat_model(\"groq\").invoke(question).text)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Ask with retrieval\n",
+    "\n",
+    "Same question, but the agent can call `search_policy` and must answer from what it finds."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "agent = create_agent(\n",
+    "    model=get_chat_model(\"groq\"),\n",
+    "    tools=[search_policy],\n",
+    "    system_prompt=(\n",
+    "        \"Answer only from the search_policy results and name the source file. \"\n",
+    "        \"If the answer is not there, say so.\"\n",
+    "    ),\n",
+    ")\n",
+    "result = agent.invoke({\"messages\": [{\"role\": \"user\", \"content\": question}]})\n",
+    "print(result[\"messages\"][-1].text)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- Search found the right section without matching keywords.\n",
+    "- Without retrieval the model guessed. With it, the answer comes from our document and names the source.\n",
+    "- Change a time in `data/knowledge_base/policies/water_charter.md`, run section 1 again, and ask again."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+
+=== 04_mcp_tools.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 4: MCP (Model Context Protocol)\n",
+    "\n",
+    "MCP is a standard way to offer tools from a separate server. Any MCP-capable app can use them, with no custom glue code.\n",
+    "\n",
+    "Our server (`mcp_server/server.py`) offers three tools. The Routing Agent connects to it and uses them.\n",
+    "\n",
+    "**Before you run the cells:** open a new terminal in VS Code, run the command below, and leave it running.\n",
+    "\n",
+    "```bash\n",
+    "uv run python -m community_voice.mcp_server.server\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from community_voice.agents.routing import arun_routing_agent\n",
+    "from community_voice.agents.triage import triage\n",
+    "from community_voice.mcp_server.client import get_mcp_tools\n",
+    "from community_voice.schemas.report import ReportIn"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Tools from the server\n",
+    "\n",
+    "The client connects to the running server and asks what it offers. Names and descriptions come from the server's code."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "tools = await get_mcp_tools()\n",
+    "for tool in tools:\n",
+    "    print(tool.name, \"-\", tool.description.splitlines()[0])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Call a tool through MCP"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "find = next(tool for tool in tools if tool.name == \"find_municipality\")\n",
+    "print(await find.ainvoke({\"area\": \"Umlazi V Section\"}))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Route a report with MCP tools\n",
+    "\n",
+    "The same Routing Agent as Phase 2. Only the source of its tools changed."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def show_trace(state):\n",
+    "    for message in state[\"messages\"]:\n",
+    "        if message.type == \"ai\" and message.tool_calls:\n",
+    "            for call in message.tool_calls:\n",
+    "                if call[\"name\"] != \"RoutingResult\":\n",
+    "                    print(\"ACT   \", call[\"name\"], call[\"args\"])\n",
+    "        elif message.type == \"tool\" and message.name != \"RoutingResult\":\n",
+    "            print(\"RESULT\", message.text)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "report = ReportIn(\n",
+    "    text=\"Amanzi ayaphuma emgwaqeni e-Umlazi V Section, \"\n",
+    "    \"kuvuza ipayipi elikhulu kusukela izolo.\"\n",
+    ")\n",
+    "triaged = triage(report)\n",
+    "state = await arun_routing_agent(triaged, tools)\n",
+    "show_trace(state)\n",
+    "print(state[\"structured_response\"].model_dump_json(indent=2))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- The tools live in a separate server process. The agent only knows their names and descriptions.\n",
+    "- The agent code did not change, only where its tools come from.\n",
+    "- Any other MCP client could use this server too.\n",
+    "- Stop the server with Ctrl+C in its terminal when you are done."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+
+=== 05_context_check.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 5: Web search (Context Check agent)\n",
+    "\n",
+    "Is a reported problem already a known or planned outage? The Context Check agent searches the web with Tavily and answers with cited sources.\n",
+    "\n",
+    "It only receives the service, area and municipality, never the report text, so no personal details can reach a search. Results come from the live web, so yours will differ."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from community_voice.agents.context_check import run_context_check\n",
+    "from community_voice.tools.web_search import web_search"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. A raw search\n",
+    "\n",
+    "The tool returns the last month's results as title, URL and a short snippet."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(web_search.invoke({\"query\": \"Soweto power outage Johannesburg\"}))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Check an area\n",
+    "\n",
+    "`show` prints each search the agent makes (ACT), what came back (RESULT, shortened), and the final answer."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def show(state):\n",
+    "    for message in state[\"messages\"]:\n",
+    "        if message.type == \"ai\" and message.tool_calls:\n",
+    "            for call in message.tool_calls:\n",
+    "                if call[\"name\"] != \"ContextCheckResult\":\n",
+    "                    print(\"ACT   \", call[\"name\"], call[\"args\"])\n",
+    "        elif message.type == \"tool\" and message.name != \"ContextCheckResult\":\n",
+    "            print(\"RESULT\", message.text[:150].replace(\"\\n\", \" \"))\n",
+    "    print(state[\"structured_response\"].model_dump_json(indent=2))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "show(run_context_check(\"electricity\", \"Soweto\", \"Johannesburg\"))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "show(run_context_check(\"water\", \"Soshanguve\", \"Tshwane\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. An area with nothing to find\n",
+    "\n",
+    "The area is made up. The agent should say `nothing_found`, with low confidence and no sources, instead of inventing a link."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "show(run_context_check(\"water\", \"Zzyzx Heights\", \"eThekwini\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- The agent chose its own search words and could search again.\n",
+    "- Every source is a page the search returned.\n",
+    "- With no evidence, it said so.\n",
+    "- Web text is untrusted: the prompt tells the agent to treat it as data."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+
+=== 06_graph_workflow.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 6: Orchestration with LangGraph\n",
+    "\n",
+    "So far each agent ran alone. A LangGraph graph connects them: every step reads and writes a shared state, and conditional edges choose the next step.\n",
+    "\n",
+    "Flow: triage, routing, web check, duplicate check. Critical reports skip the web check, and a planned outage ends early."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": "from langgraph.checkpoint.memory import InMemorySaver\n\nfrom community_voice.db.repository import reset_database\nfrom community_voice.graph.workflow import build_graph\nfrom community_voice.rag.reports import reset_reports\nfrom community_voice.schemas.report import ReportIn"
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. The graph\n",
+    "\n",
+    "The diagram as text. Paste it into any Mermaid viewer (for example mermaid.live) to see it drawn."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": "graph = build_graph(InMemorySaver())\nprint(graph.get_graph().draw_mermaid())"
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "## 2. Run a report and watch each step\n\n`graph.stream` returns each step's update as soon as it finishes.\n\nSince Phase 7 the graph saves each report and then pauses for a human review, so these runs stop there. Phase 7 shows the review."
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": "def run(report_id, text):\n    inputs = {\"report_id\": report_id, \"report\": ReportIn(text=text)}\n    config = {\"configurable\": {\"thread_id\": report_id}}\n    for chunk in graph.stream(inputs, config, stream_mode=\"updates\", version=\"v2\"):\n        if chunk[\"type\"] != \"updates\":\n            continue\n        for node, update in chunk[\"data\"].items():\n            print(f\"[{node}]\")\n            for key, value in update.items():\n                print(f\"   {key}: {str(value)[:160]}\")"
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": "reset_database()\nreset_reports()\nrun(\n    \"r02\",\n    \"Amanzi ayaphuma emgwaqeni e-Umlazi V Section, \"\n    \"kuvuza ipayipi elikhulu kusukela izolo.\",\n)"
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. A critical report\n",
+    "\n",
+    "Live wires near a hospital. Look for the web check: it should be skipped."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "run(\n",
+    "    \"r05\",\n",
+    "    \"After last night's storm there are live wires hanging low over the \"\n",
+    "    \"road near Tembisa Hospital. Children walk under them to get to school.\",\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. A duplicate\n",
+    "\n",
+    "The same burst pipe in Umlazi, reported again in different words."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "run(\n",
+    "    \"r02b\",\n",
+    "    \"A big pipe has burst in Umlazi V Section and water has been running \"\n",
+    "    \"down the street since yesterday.\",\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- One shared state: each step adds its result and later steps read it.\n",
+    "- Different reports take different paths through the same graph.\n",
+    "- The duplicate check compares with earlier reports and asks a model to confirm.\n",
+    "- If the first report hit the planned-outage path, it was not stored, so the duplicate is not found. Try another report."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+=== 07_review_and_persistence.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 7: Human review and persistence\n",
+    "\n",
+    "The graph now saves each report and pauses until a person reviews it. Its state is stored in SQLite, so a paused report survives a restart.\n",
+    "\n",
+    "One report is one *thread* (`thread_id` = report id). The saved state of a thread is the graph's short-term memory."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "\n",
+    "from community_voice.db.repository import list_pending, reset_database\n",
+    "from community_voice.graph.persistence import get_checkpointer\n",
+    "from community_voice.graph.workflow import build_graph\n",
+    "from community_voice.rag.reports import reset_reports\n",
+    "from community_voice.schemas.report import ReportIn"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Start fresh\n",
+    "\n",
+    "Clear the report database and the similarity index from earlier runs."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reset_database()\n",
+    "reset_reports()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Submit a report\n",
+    "\n",
+    "Live wires near a hospital: a critical report skips the web check, so it always reaches review. The graph runs, saves the report, and stops. What it prints is what the reviewer would see."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "graph = build_graph(get_checkpointer())\n",
+    "config = {\"configurable\": {\"thread_id\": \"r05\"}}\n",
+    "inputs = {\n",
+    "    \"report_id\": \"r05\",\n",
+    "    \"report\": ReportIn(\n",
+    "        text=\"After last night's storm there are live wires hanging low over the \"\n",
+    "        \"road near Tembisa Hospital. Children walk under them to get to school.\"\n",
+    "    ),\n",
+    "}\n",
+    "result = graph.invoke(inputs, config, version=\"v2\")\n",
+    "print(\"Paused at:\", graph.get_state(config).next)\n",
+    "print(json.dumps(result.interrupts[0].value, indent=2, ensure_ascii=False))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. The review queue\n",
+    "\n",
+    "Read from the database, most urgent first."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for report in list_pending():\n",
+    "    print(report.id, report.urgency, report.status, report.department)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Restart the kernel\n",
+    "\n",
+    "Click **Restart** in the toolbar. Everything in memory is gone, including the graph. The report is safe on disk.\n",
+    "\n",
+    "Then run only the cells below. Skip sections 1 to 3."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langgraph.types import Command\n",
+    "\n",
+    "from community_voice.db.repository import get_report, list_pending, list_reviews\n",
+    "from community_voice.graph.persistence import get_checkpointer\n",
+    "from community_voice.graph.workflow import build_graph\n",
+    "\n",
+    "graph = build_graph(get_checkpointer())\n",
+    "waiting = list_pending()\n",
+    "print([report.id for report in waiting])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. Resume with a correction\n",
+    "\n",
+    "The reviewer approves, but sends it to the emergency line. The answer becomes the return value of `interrupt()`."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "report_id = waiting[0].id\n",
+    "config = {\"configurable\": {\"thread_id\": report_id}}\n",
+    "answer = {\n",
+    "    \"action\": \"approve\",\n",
+    "    \"department\": \"Ekurhuleni Electricity department (emergency line)\",\n",
+    "    \"note\": \"Live wires near a hospital and a school: send the emergency crew.\",\n",
+    "}\n",
+    "result = graph.invoke(Command(resume=answer), config, version=\"v2\")\n",
+    "print(\"Status:\", result.value[\"status\"])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 6. What is in the database"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(get_report(report_id).model_dump_json(indent=2))\n",
+    "print(list_reviews(report_id))\n",
+    "print(\"Still waiting:\", list_pending())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- The graph stopped and waited, then continued from the same place after a restart.\n",
+    "- The reviewer's correction was applied and the review was recorded.\n",
+    "- Code before `interrupt()` runs again on resume, so that step has no side effects. Saving happens in separate steps.\n",
+    "- A report that the web check finds to be a planned outage skips review, so it would not appear in the queue."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+
+=== 08_memory_and_drafting.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 8: Long-term memory and the Drafter\n",
+    "\n",
+    "Two things are new. **Long-term memory** keeps what reviewers corrected, so similar reports get hints next time. The **Drafter** writes a suggested reply, and a person approves it before it is ready to send. Nothing is ever sent without getting human approval.\n",
+    "\n",
+    "Memory here is hints in the prompt, not model training, so it nudges the model but does not guarantee a change."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "from uuid import uuid4\n",
+    "\n",
+    "from langgraph.types import Command\n",
+    "\n",
+    "from community_voice.agents.triage import triage\n",
+    "from community_voice.db.repository import get_draft, reset_database\n",
+    "from community_voice.graph.memory import (\n",
+    "    NAMESPACE,\n",
+    "    find_hints,\n",
+    "    get_store,\n",
+    "    remember_correction,\n",
+    "    reset_memory,\n",
+    ")\n",
+    "from community_voice.graph.persistence import get_checkpointer\n",
+    "from community_voice.graph.workflow import build_graph\n",
+    "from community_voice.rag.reports import reset_reports\n",
+    "from community_voice.schemas.report import ReportIn\n",
+    "from community_voice.schemas.review import ReviewDecision\n",
+    "from community_voice.schemas.triage import TriageResult"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Start fresh\n",
+    "\n",
+    "The next cell creates the memory file, `data/memory.db`, and clears old memory. It uses the local embedding model, so the first run may download it."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "store = get_store()\n",
+    "reset_memory(store)\n",
+    "reset_database()\n",
+    "reset_reports()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Triage without memory\n",
+    "\n",
+    "A school with no water. A model would normally call this `high`, not `critical`."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "high - A school lacking water for several days is an essential service issue affecting many children.\n"
+     ]
+    }
+   ],
+   "source": [
+    "new_report = ReportIn(\n",
+    "    text=\"The taps at Sizwe Primary School in Gqeberha have been dry since Monday.\"\n",
+    ")\n",
+    "before = triage(new_report)\n",
+    "print(before.urgency.value, \"-\", before.urgency_reason)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. A reviewer corrects a similar report\n",
+    "\n",
+    "We act out an earlier case. Triage said `high`, and the reviewer made it `critical`, because in this municipality a school without water is always critical. Only real changes are remembered."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Remembered: True\n"
+     ]
+    }
+   ],
+   "source": [
+    "earlier_text = (\n",
+    "    \"There has been no water at Thandi Primary School in Soshanguve for three days.\"\n",
+    ")\n",
+    "ai_said = TriageResult(\n",
+    "    language=\"en\",\n",
+    "    english_text=earlier_text,\n",
+    "    category=\"water\",\n",
+    "    summary=\"No water at a primary school.\",\n",
+    "    urgency=\"high\",\n",
+    "    urgency_reason=\"Essential service out for days.\",\n",
+    "    area_mentioned=\"Soshanguve\",\n",
+    ")\n",
+    "reviewer = ReviewDecision(\n",
+    "    action=\"approve\",\n",
+    "    urgency=\"critical\",\n",
+    "    note=\"A school without water is always critical here.\",\n",
+    ")\n",
+    "saved = remember_correction(\n",
+    "    store, \"r10\", earlier_text, ai_said, \"Tshwane Water and Sanitation\", reviewer\n",
+    ")\n",
+    "print(\"Remembered:\", saved)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Hints for a similar report\n",
+    "\n",
+    "Search by meaning. A higher score is a closer match. An unrelated report is included to show what a weak match scores."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "The taps at Sizwe Primary School in Gqeberha have \n",
+      "   0.36 No water at a primary school.\n",
+      "A large pothole on Main Road in Woodstock damaged \n",
+      "   0.06 No water at a primary school.\n",
+      "['Similar report (No water at a primary school.): a reviewer changed urgency from high to critical. Note: A school without water is always critical here.']\n"
+     ]
+    }
+   ],
+   "source": [
+    "unrelated = \"A large pothole on Main Road in Woodstock damaged my tyre.\"\n",
+    "for query in (new_report.text, unrelated):\n",
+    "    print(query[:50])\n",
+    "    for item in store.search(NAMESPACE, query=query, limit=1):\n",
+    "        print(\"  \", round(item.score, 2), item.value[\"summary\"])\n",
+    "hints = find_hints(store, new_report.text)\n",
+    "print(hints)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. Triage again, with the hints"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "critical - Lack of water at a primary school is a health and hygiene risk for learners and staff.\n"
+     ]
+    }
+   ],
+   "source": [
+    "after = triage(new_report, hints=hints)\n",
+    "print(after.urgency.value, \"-\", after.urgency_reason)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 6. The Drafter and the second approval\n",
+    "\n",
+    "The critical Tembisa report skips the web check, so this path is predictable. The graph pauses twice: first to review the report, then to review the drafted reply."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Paused at: ('human_review',)\n"
+     ]
+    }
+   ],
+   "source": [
+    "graph = build_graph(get_checkpointer(), store)\n",
+    "report_id = f\"r05-{uuid4().hex[:6]}\"\n",
+    "config = {\"configurable\": {\"thread_id\": report_id}}\n",
+    "inputs = {\n",
+    "    \"report_id\": report_id,\n",
+    "    \"report\": ReportIn(\n",
+    "        text=\"After last night's storm there are live wires hanging low over \"\n",
+    "        \"the road near Tembisa Hospital. Children walk under them to get to \"\n",
+    "        \"school.\"\n",
+    "    ),\n",
+    "}\n",
+    "result = graph.invoke(inputs, config, version=\"v2\")\n",
+    "print(\"Paused at:\", graph.get_state(config).next)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The reviewer approves the report. The Drafter then writes a reply and the graph pauses again.\n",
+    "\n",
+    "Read the draft against the policy files before approving it. The second approval exists to catch mistakes."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Paused at: ('draft_review',)\n",
+      "{\n",
+      "  \"body\": \"Dear resident,\\n\\nThank you for reporting the low-hanging live electrical wires near Tembisa Hospital (Reference: r05-75c64b). We treat this issue as a critical danger to public safety.\\n\\nIn accordance with our Electricity Service Charter, a crew will arrive at the site within 2 hours. Please keep away from the area and warn others to do the same.\\n\\nWe have acknowledged your report within the required 1-hour timeframe for critical issues. You may also contact the Ekurhuleni Electricity department at 000 000 0005 for further updates.\\n\\nSincerely,\\n\\nMunicipality of Ekurhuleni\",\n",
+      "  \"policy_sources\": [\n",
+      "    \"electricity_charter.md\",\n",
+      "    \"sla_rules.md\"\n",
+      "  ]\n",
+      "}\n"
+     ]
+    }
+   ],
+   "source": [
+    "result = graph.invoke(Command(resume={\"action\": \"approve\"}), config, version=\"v2\")\n",
+    "print(\"Paused at:\", graph.get_state(config).next)\n",
+    "print(json.dumps(result.interrupts[0].value[\"draft\"], indent=2))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 7. Approve the draft with an edit"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Status: ready_to_send\n",
+      "Dear resident,\n",
+      "\n",
+      "Thank you for reporting the low-hanging live electrical wires near Tembisa Hospital (Reference: r05-75c64b). We treat this issue as a critical danger to public safety.\n",
+      "\n",
+      "In accordance with our Electricity Service Charter, a crew will arrive at the site within 2 hours. Please keep away from the area and warn others to do the same.\n",
+      "\n",
+      "We have acknowledged your report within the required 1-hour timeframe for critical issues. You may also contact the Ekurhuleni Electricity department at 000 000 0005 for further updates.\n",
+      "\n",
+      "Sincerely,\n",
+      "\n",
+      "Municipality of Ekurhuleni\n",
+      "\n",
+      "Please keep children away from the wires.\n"
+     ]
+    }
+   ],
+   "source": [
+    "draft = result.interrupts[0].value[\"draft\"][\"body\"]\n",
+    "edited = draft + \"\\n\\nPlease keep children away from the wires.\"\n",
+    "answer = {\"action\": \"approve\", \"text\": edited}\n",
+    "result = graph.invoke(Command(resume=answer), config, version=\"v2\")\n",
+    "print(\"Status:\", result.value[\"status\"])\n",
+    "print(get_draft(report_id)[\"body\"])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- Memory is shared across reports. Short-term memory belongs to one report.\n",
+    "- Only a real change by a reviewer is remembered.\n",
+    "- The Drafter works from our policy documents, but it can still pick the wrong figure. A person checks the draft.\n",
+    "- A person approves twice before a reply is ready to send."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+
+=== 09_api_and_streaming.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 9: The API and streaming\n",
+    "\n",
+    "FastAPI puts the workflow behind HTTP endpoints, so any app can use it. Progress is streamed as server-sent events: one message per finished step.\n",
+    "\n",
+    "**Before you run the cells:** open a new terminal in VS Code, run the command below, and leave it running. Stop it later with Ctrl+C.\n",
+    "\n",
+    "```bash\n",
+    "uv run uvicorn community_voice.api.main:app --port 8800\n",
+    "```\n",
+    "\n",
+    "You can also try the endpoints in your browser at http://127.0.0.1:8800/docs."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "\n",
+    "import httpx\n",
+    "\n",
+    "BASE = \"http://127.0.0.1:8800\"\n",
+    "\n",
+    "\n",
+    "def stream(path, payload):\n",
+    "    \"\"\"POST and print each event as it arrives. Returns all events.\"\"\"\n",
+    "    events = []\n",
+    "    name = None\n",
+    "    with httpx.stream(\"POST\", BASE + path, json=payload, timeout=180) as response:\n",
+    "        response.raise_for_status()\n",
+    "        for line in response.iter_lines():\n",
+    "            if line.startswith(\"event:\"):\n",
+    "                name = line.split(\":\", 1)[1].strip()\n",
+    "            elif line.startswith(\"data:\"):\n",
+    "                data = json.loads(line.split(\":\", 1)[1])\n",
+    "                events.append((name, data))\n",
+    "                shown = data.get(\"message\") or data.get(\"report_id\") or data\n",
+    "                print(f\"{name:8}\", str(shown)[:100])\n",
+    "    return events"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Is it running?"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(httpx.get(BASE + \"/health\").json())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Submit a report and watch it stream\n",
+    "\n",
+    "The critical Tembisa report skips the web check, so the path is predictable. The stream ends when the report is waiting for a reviewer."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "report = {\n",
+    "    \"text\": \"After last night's storm there are live wires hanging low over \"\n",
+    "    \"the road near Tembisa Hospital. Children walk under them to get to school.\"\n",
+    "}\n",
+    "events = stream(\"/reports\", report)\n",
+    "report_id = events[0][1][\"report_id\"]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. The review queue and the report"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for item in httpx.get(BASE + \"/reviews\").json():\n",
+    "    print(item[\"id\"], item[\"urgency\"], item[\"status\"])\n",
+    "detail = httpx.get(f\"{BASE}/reports/{report_id}\").json()\n",
+    "print(\"Waiting for:\", detail[\"waiting_for\"])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Send the review\n",
+    "\n",
+    "The reviewer approves. Watch the Drafter work, then the stream pauses again for the draft."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "events = stream(f\"/reports/{report_id}/review\", {\"action\": \"approve\"})\n",
+    "draft = events[-1][1][\"payload\"][\"draft\"][\"body\"]\n",
+    "print(draft)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. Approve the draft\n",
+    "\n",
+    "This call returns plain JSON. Read the draft first."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "response = httpx.post(\n",
+    "    f\"{BASE}/reports/{report_id}/draft\", json={\"action\": \"approve\"}, timeout=60\n",
+    ")\n",
+    "print(response.json()[\"status\"])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 6. Answering at the wrong time\n",
+    "\n",
+    "The report is finished, so another draft decision is refused."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "response = httpx.post(\n",
+    "    f\"{BASE}/reports/{report_id}/draft\", json={\"action\": \"approve\"}, timeout=60\n",
+    ")\n",
+    "print(response.status_code, response.json())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- Each step arrived as soon as it finished, not all at the end.\n",
+    "- The API only moves a report forward when it is waiting for that decision.\n",
+    "- A screen can use the same calls: stream the steps, show the queue, send decisions."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+
+=== 10_voice_and_photos.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "7fb27b941602401d91542211134fc71a",
+   "metadata": {},
+   "source": [
+    "# Phase 10: Voice notes and photos\n",
+    "\n",
+    "A report can arrive as a voice note. Speech-to-text (Gemini) turns it into text, and the citizen checks that text before it enters the same pipeline. Photos are optional and only for the human reviewer.\n",
+    "\n",
+    "Sections 1 to 4 run on their own. Section 5 needs the API: open a new terminal in VS Code, run the command below, and leave it running.\n",
+    "\n",
+    "```bash\n",
+    "uv run uvicorn community_voice.api.main:app --port 8800\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "acae54e37e7d407bbb7b55eff062a284",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import io\n",
+    "import re\n",
+    "\n",
+    "import httpx\n",
+    "from PIL import Image\n",
+    "\n",
+    "from community_voice.agents.triage import triage\n",
+    "from community_voice.core.config import PROJECT_ROOT\n",
+    "from community_voice.media.photos import InvalidPhoto, clean_photo\n",
+    "from community_voice.media.transcribe import transcribe\n",
+    "from community_voice.schemas.report import ReportIn\n",
+    "\n",
+    "AUDIO = PROJECT_ROOT / \"data\" / \"sample_reports\" / \"audio\""
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "9a63283cbaf04dbcab1f6479b197f3a8",
+   "metadata": {},
+   "source": [
+    "## 1. One voice note"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8dd0d8092fe74a7c96281538738b07e2",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "path = AUDIO / \"English.mp3\"\n",
+    "transcript = transcribe(path.read_bytes(), path.name)\n",
+    "transcript"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "72eea5119410473aa328ad9291626812",
+   "metadata": {},
+   "source": [
+    "## 2. Every language\n",
+    "\n",
+    "Gemini is not told the language. Every transcript comes with a warning, so the citizen always checks the text."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8edb47106e1a46a883d545849b8ab81b",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for path in sorted(AUDIO.glob(\"*.mp3\")):\n",
+    "    t = transcribe(path.read_bytes(), path.name)\n",
+    "    print(f\"{path.stem}:\")\n",
+    "    print(\"  \", t.text[:150])\n",
+    "print(t.warning)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "10185d26023b46108eb7d9f57d49d2b3",
+   "metadata": {},
+   "source": [
+    "## 3. Into the same pipeline\n",
+    "\n",
+    "After the citizen confirms the text, it is an ordinary report."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8763a12b2bbd4a93a75aff182afb95dc",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "report = ReportIn(text=transcript.text)\n",
+    "result = triage(report)\n",
+    "print(result.category.value, result.urgency.value)\n",
+    "print(result.summary)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "7623eae2785240b9bd12b16a66d81610",
+   "metadata": {},
+   "source": [
+    "## 4. Photos\n",
+    "\n",
+    "Phone photos carry hidden data, including GPS location. We build a photo with fake metadata, then clean it: the image is decoded to prove it is real, resized, and re-saved without the metadata."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "7cdc8c89c7104fffa095e18ddfef8986",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "exif = Image.Exif()\n",
+    "exif[0x010F] = \"TestPhone\"\n",
+    "exif.get_ifd(0x8825)[1] = \"S\"  # a GPS entry\n",
+    "\n",
+    "buffer = io.BytesIO()\n",
+    "Image.new(\"RGB\", (3200, 2400), \"grey\").save(buffer, \"JPEG\", exif=exif.tobytes())\n",
+    "original = buffer.getvalue()\n",
+    "cleaned = clean_photo(original)\n",
+    "\n",
+    "\n",
+    "def describe(data):\n",
+    "    image = Image.open(io.BytesIO(data))\n",
+    "    return (\n",
+    "        f\"{image.size}, {len(image.getexif())} metadata entries, {len(data) // 1024} KB\"\n",
+    "    )\n",
+    "\n",
+    "\n",
+    "print(\"before:\", describe(original))\n",
+    "print(\"after: \", describe(cleaned))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b118ea5561624da68c537baed56e602f",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "try:\n",
+    "    clean_photo(b\"this is not a photo\")\n",
+    "except InvalidPhoto as error:\n",
+    "    print(error)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "938c804e27f84196a10c8828c723f798",
+   "metadata": {},
+   "source": [
+    "## 5. Through the API"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "504fb2a444614c0babb325280ed9130a",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "BASE = \"http://127.0.0.1:8800\"\n",
+    "\n",
+    "with (AUDIO / \"English.mp3\").open(\"rb\") as file:\n",
+    "    response = httpx.post(\n",
+    "        BASE + \"/transcriptions\", files={\"audio\": (\"English.mp3\", file)}, timeout=60\n",
+    "    )\n",
+    "voice = response.json()\n",
+    "voice"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "59bbdb311c014d738909a11f9e486628",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "response = httpx.post(BASE + \"/reports\", json={\"text\": voice[\"text\"]}, timeout=180)\n",
+    "report_id = re.search(r\"r-\\w+\", response.text).group()\n",
+    "report_id"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b43b363d81ae4b689946ece5c682cd59",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "files = {\"photo\": (\"pothole.jpg\", original, \"image/jpeg\")}\n",
+    "print(httpx.put(f\"{BASE}/reports/{report_id}/photo\", files=files).json())\n",
+    "print(httpx.get(f\"{BASE}/reports/{report_id}\").json()[\"has_photo\"])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8a65eabff63a45729fe45fb5ade58bdc",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bad = {\"photo\": (\"x.jpg\", b\"not a photo\", \"image/jpeg\")}\n",
+    "response = httpx.put(f\"{BASE}/reports/{report_id}/photo\", files=bad)\n",
+    "print(response.status_code, response.json())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "c3933fab20d04ec698c2621248eb3be0",
+   "metadata": {},
+   "source": [
+    "## What to notice\n",
+    "\n",
+    "- The voice note became text, and the pipeline did not change.\n",
+    "- Every transcript carries a warning, even English.\n",
+    "- The photo is optional, checked by decoding it, and its metadata is gone."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
+
+
+=== 12_tracing_and_evals.ipynb ===
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Phase 12: Tracing and evals\n",
+    "\n",
+    "**Tracing** records every model call and step of a run, so you can see what happened. **Evals** score the agents on labelled reports, so you know whether a change made things better or worse.\n",
+    "\n",
+    "Before you run the cells: `.env` must contain `LANGSMITH_API_KEY`, `LANGSMITH_TRACING=true` and `LANGSMITH_PROJECT=community-voice`. Tracing sends report text to LangSmith, so use fictional data only."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "import sys\n",
+    "\n",
+    "import langsmith as ls\n",
+    "\n",
+    "from community_voice.core.config import PROJECT_ROOT\n",
+    "from community_voice.core.tracing import load_env\n",
+    "\n",
+    "sys.path.insert(0, str(PROJECT_ROOT))\n",
+    "\n",
+    "from evals import scoring  # noqa: E402\n",
+    "from evals.run_evals import BASELINE, load_examples, target  # noqa: E402\n",
+    "\n",
+    "load_env()  # puts .env into the environment so LangSmith can see it"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. One traced run\n",
+    "\n",
+    "Triage and routing run on one labelled report (live wires near a hospital). Then open the `community-voice` project at smith.langchain.com and click the newest trace: you will see each model call and tool call."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "example = load_examples()[4]\n",
+    "with ls.tracing_context(enabled=True, metadata={\"demo\": \"phase-12\"}):\n",
+    "    output = target(example[\"inputs\"])\n",
+    "output"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Score it\n",
+    "\n",
+    "Each score compares the agent's answer with the label. A score of `not scored` means it does not apply to this report."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for evaluator in scoring.EVALUATORS:\n",
+    "    result = evaluator(output, example[\"outputs\"])\n",
+    "    print(f\"{evaluator.__name__:20}\", result.get(\"score\", \"not scored\"))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. The regression check\n",
+    "\n",
+    "The baseline holds the scores we accepted. A run fails if a score drops more than 0.10 below it. Here we pretend a prompt change broke categories."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "baseline = json.loads(BASELINE.read_text())\n",
+    "worse = {**baseline, \"category\": 0.6}\n",
+    "print(\"Pretend run:\", scoring.regressions(worse, baseline))\n",
+    "print(\"Same as baseline:\", scoring.regressions(baseline, baseline))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. The full evaluation\n",
+    "\n",
+    "Run all 20 reports from a terminal (this takes a few minutes):\n",
+    "\n",
+    "```bash\n",
+    "uv run python -m evals.run_evals --refresh\n",
+    "```\n",
+    "\n",
+    "Open the link it prints to see each report's result in LangSmith. Run it again after a change and compare the two experiments side by side.\n",
+    "\n",
+    "## What to notice\n",
+    "\n",
+    "- A trace shows how an answer was produced, not just the answer.\n",
+    "- The \"missed\" lines show exactly where the agent and the labels disagree.\n",
+    "- A low score can mean a bad label or a bad scorer, not only a bad agent. Check before blaming the agent."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "community-voice (3.12.x)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.16"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
+
+

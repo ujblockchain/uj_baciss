@@ -1,0 +1,10 @@
+{
+  "language": 1.0,
+  "category": 1.0,
+  "urgency": 0.7,
+  "urgency_within_one": 1.0,
+  "municipality": 1.0,
+  "department": 1.0,
+  "needs_human": 1.0,
+  "critical_safe": 1.0
+}
